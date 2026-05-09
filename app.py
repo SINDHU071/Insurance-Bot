@@ -129,7 +129,7 @@ def get_response(user_input, file_text=None):
         history.append({"role": "user", "content": prompt})
 
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
+            model="llama-3.3-70b-versatile",
             messages=history,
             max_tokens=800 if st.session_state.response_mode == "Concise" else 1500,
             temperature=0.7,
