@@ -3,6 +3,7 @@ from groq import Groq
 import fitz
 import docx
 import io
+import re
 
 st.set_page_config(
     page_title="InsureBot - AI Insurance Assistant",
@@ -19,9 +20,20 @@ SYSTEM_PROMPT = """You are InsureBot, a professional and knowledgeable insurance
 - Travel Insurance (trip cancellation, medical, baggage)
 - Business Insurance (liability, workers comp, commercial property)
 
-Always be professional, accurate, and empathetic.
-In CONCISE mode: Reply in under 80 words, use bullet points.
-In DETAILED mode: Give full explanation with examples."""
+FORMATTING RULES (strictly follow):
+- Always put EACH point on its own separate line.
+- Use "• " at the start of every bullet point.
+- Add a blank line between each bullet point.
+- Never put two points on the same line.
+
+In CONCISE mode: Give 3-5 bullet points, each on its own line, short and clear.
+In DETAILED mode: Give a thorough, elaborate explanation with:
+  * A short intro paragraph
+  * Each point on its own separate line with "• "
+  * Sub-points with "  - "
+  * Real-life examples
+  * A summary at the end
+  Be as detailed and comprehensive as possible in DETAILED mode."""
 
 st.markdown("""
 <style>
@@ -43,11 +55,13 @@ st.markdown("""
     }
     .bot-msg {
         background: #FFFFFF; border: 1px solid #E2E8F0;
-        padding: 12px 16px; border-radius: 18px 18px 18px 4px;
+        padding: 16px 18px; border-radius: 18px 18px 18px 4px;
         margin: 8px 20% 8px 0; color: #1E293B;
-        font-size: 14px; line-height: 1.65;
+        font-size: 14px; line-height: 2;
         box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+        white-space: pre-wrap;
     }
+    .bot-msg p { margin: 0 0 8px 0; }
     .msg-label { font-size: 11px; color: #94A3B8; margin-bottom: 3px; }
     .stTextInput input {
         background-color: #FFFFFF !important; color: #1E293B !important;
@@ -87,16 +101,40 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# ── Session State ──────────────────────────────────────────────────────────────
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "response_mode" not in st.session_state:
     st.session_state.response_mode = "Concise"
 if "pending_query" not in st.session_state:
     st.session_state.pending_query = None
+if "input_key" not in st.session_state:
+    st.session_state.input_key = 0
+if "file_key" not in st.session_state:
+    st.session_state.file_key = 0
 
 GROQ_API_KEY = st.secrets.get("GROQ_API_KEY", "")
 client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
+# ── Format bot response: each bullet on its own line ──────────────────────────
+def format_response(text):
+    # Convert markdown bold **text** to just text
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    # Convert markdown bullet - or * to •
+    text = re.sub(r'^\s*[-*]\s+', '• ', text, flags=re.MULTILINE)
+    # Ensure each • point is on its own line with spacing
+    lines = text.split('\n')
+    formatted = []
+    for line in lines:
+        line = line.rstrip()
+        if line.startswith('•'):
+            formatted.append('')  # blank line before bullet
+            formatted.append(line)
+        else:
+            formatted.append(line)
+    return '\n'.join(formatted).strip()
+
+# ── File Extractor ─────────────────────────────────────────────────────────────
 def extract_text(uploaded_file):
     name = uploaded_file.name.lower()
     try:
@@ -111,13 +149,30 @@ def extract_text(uploaded_file):
     except Exception as e:
         return f"Error reading file: {e}"
 
+# ── Groq API Call ──────────────────────────────────────────────────────────────
 def get_response(user_input, file_text=None):
     try:
-        mode_note = (
-            " Reply in under 80 words, use bullet points."
-            if st.session_state.response_mode == "Concise"
-            else " Give full explanation with examples."
-        )
+        if st.session_state.response_mode == "Concise":
+            mode_note = """
+CONCISE MODE: 
+- Give exactly 3-5 bullet points only.
+- Each bullet MUST start with "• " and be on its OWN separate line.
+- Keep each point under 15 words.
+- Do NOT combine points on the same line."""
+            max_tokens = 500
+        else:
+            mode_note = """
+DETAILED MODE:
+- Give a very elaborate, comprehensive, and thorough explanation.
+- Start with a clear introduction paragraph.
+- Then list ALL relevant points, each starting with "• " on its OWN line.
+- Under each point, add "  - " sub-points for more detail.
+- Include real-world examples for each point.
+- Explain pros, cons, how it works, who needs it, cost factors.
+- End with a helpful summary paragraph.
+- Minimum 300 words. Be as thorough as possible."""
+            max_tokens = 2000
+
         prompt = user_input or "Summarize this document."
         if file_text:
             prompt = f"[Document Content]\n{file_text}\n\n---\nQuestion: {prompt}"
@@ -131,10 +186,11 @@ def get_response(user_input, file_text=None):
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=history,
-            max_tokens=800 if st.session_state.response_mode == "Concise" else 1500,
+            max_tokens=max_tokens,
             temperature=0.7,
         )
-        return response.choices[0].message.content
+        raw = response.choices[0].message.content
+        return format_response(raw)
     except Exception as e:
         return f"⚠️ Error: {str(e)}"
 
@@ -171,6 +227,8 @@ with st.sidebar:
     st.divider()
     if st.button("➕ New Chat"):
         st.session_state.messages = []
+        st.session_state.input_key += 1
+        st.session_state.file_key += 1
         st.rerun()
 
     st.divider()
@@ -202,6 +260,7 @@ if len(st.session_state.messages) == 0:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+# Display messages
 for msg in st.session_state.messages:
     if msg["role"] == "user":
         st.markdown(f"<div class='msg-label'>You</div><div class='user-msg'>{msg['content']}</div>", unsafe_allow_html=True)
@@ -209,16 +268,28 @@ for msg in st.session_state.messages:
         st.markdown(f"<div class='msg-label'>🛡️ InsureBot</div><div class='bot-msg'>{msg['content']}</div>", unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
-uploaded_file = st.file_uploader("📎 Upload a document (PDF, DOCX, TXT, CSV)", type=["pdf","docx","txt","csv","md"])
+
+# File upload — key changes to reset after send
+uploaded_file = st.file_uploader(
+    "📎 Upload a document (PDF, DOCX, TXT, CSV)",
+    type=["pdf","docx","txt","csv","md"],
+    key=f"file_upload_{st.session_state.file_key}"
+)
 
 col1, col2 = st.columns([6, 1])
 with col1:
-    user_input = st.text_input("", placeholder="Ask anything about insurance...", label_visibility="collapsed")
+    # input key changes to clear box after send
+    user_input = st.text_input(
+        "", placeholder="Ask anything about insurance...",
+        label_visibility="collapsed",
+        key=f"user_input_{st.session_state.input_key}"
+    )
 with col2:
     send = st.button("▶ Send")
 
 st.markdown("<p style='text-align:center; color:#CBD5E1; font-size:11px; margin-top:8px'>InsureBot may make mistakes. Consult a licensed insurance agent for professional advice.</p>", unsafe_allow_html=True)
 
+# ── Process ────────────────────────────────────────────────────────────────────
 def process_message(text, file=None):
     if not client:
         st.error("API Key not set! Add GROQ_API_KEY in Streamlit Cloud → Settings → Secrets.")
@@ -226,6 +297,9 @@ def process_message(text, file=None):
     file_text = extract_text(file) if file else None
     display = text or f"📄 Analyzing: {file.name}"
     st.session_state.messages.append({"role": "user", "content": display})
+    # Clear input and file after send
+    st.session_state.input_key += 1
+    st.session_state.file_key += 1
     with st.spinner("InsureBot is thinking..."):
         reply = get_response(text, file_text)
     st.session_state.messages.append({"role": "assistant", "content": reply})
