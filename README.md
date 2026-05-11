@@ -1,4 +1,4 @@
-# 🛡️ InsureBot - AI Insurance Assistant - https://insurance-bot-gyvmsu5jerwwuzysr59wa2.streamlit.app/
+# 🛡️ InsureBot - AI Insurance Assistant
 
 A conversational AI chatbot for insurance-related queries built with Streamlit and Groq AI.
 
