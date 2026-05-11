@@ -57,9 +57,9 @@ st.markdown("""
         background: #FFFFFF; border: 1px solid #E2E8F0;
         padding: 16px 18px; border-radius: 18px 18px 18px 4px;
         margin: 8px 20% 8px 0; color: #1E293B;
-        font-size: 14px; line-height: 1.6;
+        font-size: 14px; line-height: 1.5;
         box-shadow: 0 1px 4px rgba(0,0,0,0.06);
-        white-space: pre-wrap;
+        white-space: pre-line;
     }
     .bot-msg p { margin: 0; }
     .msg-label { font-size: 11px; color: #94A3B8; margin-bottom: 3px; }
@@ -122,9 +122,9 @@ def format_response(text):
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
     # Convert markdown bullets to •
     text = re.sub(r'^\s*[-*]\s+', '• ', text, flags=re.MULTILINE)
-    # Clean up: remove multiple consecutive blank lines
-    text = re.sub(r'\n{3,}', '\n\n', text)
-    return text.strip()
+    # Remove ALL blank lines — no gaps anywhere
+    lines = [l.rstrip() for l in text.split('\n') if l.strip() != '']
+    return '\n'.join(lines).strip()
 
 # ── File Extractor ─────────────────────────────────────────────────────────────
 def extract_text(uploaded_file):
