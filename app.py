@@ -57,11 +57,11 @@ st.markdown("""
         background: #FFFFFF; border: 1px solid #E2E8F0;
         padding: 16px 18px; border-radius: 18px 18px 18px 4px;
         margin: 8px 20% 8px 0; color: #1E293B;
-        font-size: 14px; line-height: 2;
+        font-size: 14px; line-height: 1.6;
         box-shadow: 0 1px 4px rgba(0,0,0,0.06);
         white-space: pre-wrap;
     }
-    .bot-msg p { margin: 0 0 8px 0; }
+    .bot-msg p { margin: 0; }
     .msg-label { font-size: 11px; color: #94A3B8; margin-bottom: 3px; }
     .stTextInput input {
         background-color: #FFFFFF !important; color: #1E293B !important;
@@ -118,21 +118,13 @@ client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 # ── Format bot response: each bullet on its own line ──────────────────────────
 def format_response(text):
-    # Convert markdown bold **text** to just text
+    # Remove markdown bold
     text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
-    # Convert markdown bullet - or * to •
+    # Convert markdown bullets to •
     text = re.sub(r'^\s*[-*]\s+', '• ', text, flags=re.MULTILINE)
-    # Ensure each • point is on its own line with spacing
-    lines = text.split('\n')
-    formatted = []
-    for line in lines:
-        line = line.rstrip()
-        if line.startswith('•'):
-            formatted.append('')  # blank line before bullet
-            formatted.append(line)
-        else:
-            formatted.append(line)
-    return '\n'.join(formatted).strip()
+    # Clean up: remove multiple consecutive blank lines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 # ── File Extractor ─────────────────────────────────────────────────────────────
 def extract_text(uploaded_file):
